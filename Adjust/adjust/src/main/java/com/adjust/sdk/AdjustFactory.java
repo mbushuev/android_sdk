@@ -22,6 +22,7 @@ public class AdjustFactory {
     private static long subsessionInterval = -1;
     private static BackoffStrategy sdkClickBackoffStrategy = null;
     private static BackoffStrategy packageHandlerBackoffStrategy = null;
+    private static long maxDelayStart = -1;
 
     public static class URLGetConnection {
         HttpsURLConnection httpsURLConnection;
@@ -110,12 +111,11 @@ public class AdjustFactory {
 
     public static IAttributionHandler getAttributionHandler(IActivityHandler activityHandler,
                                                             ActivityPackage attributionPackage,
-                                                            boolean startsSending,
-                                                            boolean hasListener) {
+                                                            boolean startsSending) {
         if (attributionHandler == null) {
-            return new AttributionHandler(activityHandler, attributionPackage, startsSending, hasListener);
+            return new AttributionHandler(activityHandler, attributionPackage, startsSending);
         }
-        attributionHandler.init(activityHandler, attributionPackage, startsSending, hasListener);
+        attributionHandler.init(activityHandler, attributionPackage, startsSending);
         return attributionHandler;
     }
 
@@ -127,14 +127,6 @@ public class AdjustFactory {
         return AdjustFactory.httpsURLConnection;
     }
 
-    public static URLGetConnection getHttpsURLGetConnection(URL url) throws IOException {
-        if (AdjustFactory.httpsURLConnection == null) {
-            return new URLGetConnection((HttpsURLConnection)url.openConnection(), url);
-        }
-
-        return new URLGetConnection(AdjustFactory.httpsURLConnection, url);
-    }
-
     public static ISdkClickHandler getSdkClickHandler(boolean startsSending) {
         if (sdkClickHandler == null) {
             return new SdkClickHandler(startsSending);
@@ -142,6 +134,13 @@ public class AdjustFactory {
 
         sdkClickHandler.init(startsSending);
         return sdkClickHandler;
+    }
+
+    public static long getMaxDelayStart() {
+        if (maxDelayStart == -1) {
+            return Constants.ONE_SECOND * 10; // 10 seconds
+        }
+        return maxDelayStart;
     }
 
     public static void setPackageHandler(IPackageHandler packageHandler) {

@@ -9,43 +9,34 @@
 
 package com.adjust.sdk;
 
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.os.AsyncTask;
 import android.os.Looper;
-
-import org.json.JSONException;
-import org.json.JSONObject;
+import android.provider.Settings.Secure;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
 import java.io.Closeable;
-import java.io.DataOutputStream;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.NotSerializableException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.io.UnsupportedEncodingException;
 import java.math.BigInteger;
-import java.net.URL;
-import java.net.URLEncoder;
 import java.security.MessageDigest;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.net.ssl.HttpsURLConnection;
 
 import static com.adjust.sdk.Constants.ENCODING;
 import static com.adjust.sdk.Constants.MD5;
@@ -55,11 +46,11 @@ import static com.adjust.sdk.Constants.SHA1;
  * Collects utility functions used by Adjust.
  */
 public class Util {
-
-    private static SimpleDateFormat dateFormat;
     private static final String DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'Z";
     private static final String fieldReadErrorMessage = "Unable to read '%s' field in migration device with message (%s)";
     public static final DecimalFormat SecondsDisplayFormat = new DecimalFormat("0.0");
+    public static final SimpleDateFormat dateFormatter = new SimpleDateFormat(DATE_FORMAT, Locale.US);
+
 
     private static ILogger getLogger() {
         return AdjustFactory.getLogger();
@@ -81,13 +72,6 @@ public class Util {
         }
 
         return String.format(Locale.US, "'%s'", string);
-    }
-
-    public static String dateFormat(long date) {
-        if (dateFormat == null) {
-            dateFormat = new SimpleDateFormat(DATE_FORMAT, Locale.US);
-        }
-        return dateFormat.format(date);
     }
 
     public static String getPlayAdId(Context context) {
@@ -192,6 +176,7 @@ public class Util {
 
             try {
                 objectStream.writeObject(object);
+
                 getLogger().debug("Wrote %s: %s", objectName, object);
             } catch (NotSerializableException e) {
                 getLogger().error("Failed to serialize %s", objectName);
@@ -206,157 +191,6 @@ public class Util {
         } catch (Exception e) {
             getLogger().error("Failed to close %s file for writing (%s)", objectName, e);
         }
-    }
-
-    public static ResponseData readHttpResponse(HttpsURLConnection connection, ActivityPackage activityPackage) throws Exception {
-        StringBuffer sb = new StringBuffer();
-        ILogger logger = getLogger();
-        Integer responseCode = null;
-        try {
-            responseCode = connection.getResponseCode();
-            InputStream inputStream;
-
-            if (responseCode >= 400) {
-                inputStream = connection.getErrorStream();
-            } else {
-                inputStream = connection.getInputStream();
-            }
-
-            InputStreamReader inputStreamReader = new InputStreamReader(inputStream);
-            BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
-
-            String line;
-            while ((line = bufferedReader.readLine()) != null) {
-                sb.append(line);
-            }
-        } catch (Exception e) {
-            logger.error("Failed to read response. (%s)", e.getMessage());
-            throw e;
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
-
-        ResponseData responseData = ResponseData.buildResponseData(activityPackage);
-
-        String stringResponse = sb.toString();
-        logger.verbose("Response: %s", stringResponse);
-
-        if (stringResponse == null || stringResponse.length() == 0) {
-            return responseData;
-        }
-
-        JSONObject jsonResponse = null;
-        try {
-            jsonResponse = new JSONObject(stringResponse);
-        } catch (JSONException e) {
-            String message = String.format("Failed to parse json response. (%s)", e.getMessage());
-            logger.error(message);
-            responseData.message = message;
-        }
-
-        if (jsonResponse == null) {
-            return responseData;
-        }
-
-        responseData.jsonResponse = jsonResponse;
-
-        String message = jsonResponse.optString("message", null);
-
-        responseData.message = message;
-        responseData.timestamp = jsonResponse.optString("timestamp", null);
-        responseData.adid = jsonResponse.optString("adid", null);
-
-        if (message == null) {
-            message = "No message found";
-        }
-
-        if (responseCode != null &&
-                responseCode == HttpsURLConnection.HTTP_OK) {
-            logger.info("%s", message);
-            responseData.success = true;
-        } else {
-            logger.error("%s", message);
-        }
-
-        return responseData;
-    }
-
-    public static AdjustFactory.URLGetConnection createGETHttpsURLConnection(String urlString, String clientSdk)
-            throws IOException
-    {
-        URL url = new URL(urlString);
-        AdjustFactory.URLGetConnection urlGetConnection = AdjustFactory.getHttpsURLGetConnection(url);
-
-        HttpsURLConnection connection = urlGetConnection.httpsURLConnection;
-        setDefaultHttpsUrlConnectionProperties(connection, clientSdk);
-
-        connection.setRequestMethod("GET");
-
-        return urlGetConnection;
-    }
-
-    public static HttpsURLConnection createPOSTHttpsURLConnection(String urlString, String clientSdk,
-                                                                  Map<String, String> parameters,
-                                                                  int queueSize)
-            throws IOException
-    {
-        URL url = new URL(urlString);
-        HttpsURLConnection connection = AdjustFactory.getHttpsURLConnection(url);
-
-        setDefaultHttpsUrlConnectionProperties(connection, clientSdk);
-        connection.setRequestMethod("POST");
-
-        connection.setUseCaches(false);
-        connection.setDoInput(true);
-        connection.setDoOutput(true);
-
-        DataOutputStream wr = new DataOutputStream(connection.getOutputStream());
-        wr.writeBytes(getPostDataString(parameters, queueSize));
-        wr.flush();
-        wr.close();
-
-        return connection;
-    }
-
-    private static String getPostDataString(Map<String, String> body, int queueSize) throws UnsupportedEncodingException {
-        StringBuilder result = new StringBuilder();
-
-        for(Map.Entry<String, String> entry : body.entrySet()) {
-            String encodedName = URLEncoder.encode(entry.getKey(), Constants.ENCODING);
-            String value = entry.getValue();
-            String encodedValue = value != null ? URLEncoder.encode(value, Constants.ENCODING) : "";
-            if (result.length() > 0) {
-                result.append("&");
-            }
-
-            result.append(encodedName);
-            result.append("=");
-            result.append(encodedValue);
-        }
-
-        long now = System.currentTimeMillis();
-        String dateString = Util.dateFormat(now);
-
-        result.append("&");
-        result.append(URLEncoder.encode("sent_at", Constants.ENCODING));
-        result.append("=");
-        result.append(URLEncoder.encode(dateString, Constants.ENCODING));
-
-        result.append("&");
-        result.append(URLEncoder.encode("queue_size", Constants.ENCODING));
-        result.append("=");
-        result.append(URLEncoder.encode("" + queueSize, Constants.ENCODING));
-
-
-        return result.toString();
-    }
-
-    public static void setDefaultHttpsUrlConnectionProperties(HttpsURLConnection connection, String clientSdk) {
-        connection.setRequestProperty("Client-SDK", clientSdk);
-        connection.setConnectTimeout(Constants.ONE_MINUTE);
-        connection.setReadTimeout(Constants.ONE_MINUTE);
     }
 
     public static boolean checkPermission(Context context, String permission) {
@@ -409,13 +243,6 @@ public class Util {
             return first == null && second == null;
         }
         return first.equals(second);
-    }
-
-    public static boolean equalsMap(Map first, Map second) {
-        if (first == null || second == null) {
-            return first == null && second == null;
-        }
-        return first.entrySet().equals(second.entrySet());
     }
 
     public static boolean equalsDouble(Double first, Double second) {
@@ -473,11 +300,11 @@ public class Util {
         return value.hashCode();
     }
 
-    public static int hashMap(Map value) {
+    public static int hashObject(Object value) {
         if (value == null) {
             return 0;
         }
-        return value.entrySet().hashCode();
+        return value.hashCode();
     }
 
     public static String sha1(final String text) {
@@ -546,5 +373,77 @@ public class Util {
         double scaled = random.nextDouble() * range;
         double shifted = scaled + minRange;
         return shifted;
+    }
+
+    public static boolean isValidParameter(String attribute, String attributeType, String parameterName) {
+        if (attribute == null) {
+            getLogger().error("%s parameter %s is missing", parameterName, attributeType);
+            return false;
+        }
+        if (attribute.equals("")) {
+            getLogger().error("%s parameter %s is empty", parameterName, attributeType);
+            return false;
+        }
+
+        return true;
+    }
+
+    public static Map<String, String> mergeParameters(Map<String, String> target,
+                                                      Map<String, String> source,
+                                                      String parameterName) {
+        if (target == null) {
+            return source;
+        }
+        if (source == null) {
+            return target;
+        }
+        Map<String, String> mergedParameters = new HashMap<String, String>(target);
+        ILogger logger = getLogger();
+        for (Map.Entry<String, String> parameterSourceEntry : source.entrySet()) {
+            String oldValue = mergedParameters.put(parameterSourceEntry.getKey(), parameterSourceEntry.getValue());
+            if (oldValue != null) {
+                logger.warn("Key %s with value %s from %s parameter was replaced by value %s",
+                        parameterSourceEntry.getKey(),
+                        oldValue,
+                        parameterName,
+                        parameterSourceEntry.getValue());
+            }
+        }
+        return mergedParameters;
+    }
+
+    public static String getVmInstructionSet() {
+        return Reflection.getVmInstructionSet();
+    }
+
+    public static Locale getLocale(Configuration configuration) {
+        Locale locale = Reflection.getLocaleFromLocaleList(configuration);
+        if (locale != null) {
+            return locale;
+        }
+        return Reflection.getLocaleFromField(configuration);
+    }
+
+    public static String getFireAdvertisingId(ContentResolver contentResolver) {
+        if (contentResolver == null) {
+            return null;
+        }
+        try {
+            // get advertising
+            return Secure.getString(contentResolver, "advertising_id");
+        } catch (Exception ex) {
+            // not supported
+        }
+        return null;
+    }
+
+    public static Boolean getFireTrackingEnabled(ContentResolver contentResolver) {
+        try {
+            // get user's tracking preference
+            return Secure.getInt(contentResolver, "limit_ad_tracking") == 0;
+        } catch (Exception ex) {
+            // not supported
+        }
+        return null;
     }
 }

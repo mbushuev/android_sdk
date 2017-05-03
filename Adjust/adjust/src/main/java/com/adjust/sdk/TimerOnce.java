@@ -1,6 +1,6 @@
 package com.adjust.sdk;
 
-import java.util.concurrent.ScheduledExecutorService;
+import java.lang.ref.WeakReference;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -8,15 +8,16 @@ import java.util.concurrent.TimeUnit;
  * Created by pfms on 08/05/15.
  */
 public class TimerOnce {
-    private ScheduledExecutorService scheduler;
+    private CustomScheduledExecutor executor;
+
     private ScheduledFuture waitingTask;
     private String name;
     private Runnable command;
     private ILogger logger;
 
-    public TimerOnce(ScheduledExecutorService scheduler, Runnable command, String name) {
+    public TimerOnce(Runnable command, String name) {
         this.name = name;
-        this.scheduler = scheduler;
+        this.executor = new CustomScheduledExecutor(name, true);
         this.command = command;
         this.logger = AdjustFactory.getLogger();
     }
@@ -29,7 +30,7 @@ public class TimerOnce {
 
         logger.verbose("%s starting. Launching in %s seconds", name, fireInSeconds);
 
-        waitingTask = scheduler.schedule(new Runnable() {
+        waitingTask = executor.schedule(new Runnable() {
             @Override
             public void run() {
                 logger.verbose("%s fired", name);
@@ -46,18 +47,22 @@ public class TimerOnce {
         return waitingTask.getDelay(TimeUnit.MILLISECONDS);
     }
 
-    private void cancel(boolean log) {
+    private void cancel(boolean mayInterruptIfRunning) {
         if (waitingTask != null) {
-            waitingTask.cancel(false);
+            waitingTask.cancel(mayInterruptIfRunning);
         }
         waitingTask = null;
 
-        if (log) {
-            logger.verbose("%s canceled", name);
-        }
+        logger.verbose("%s canceled", name);
     }
 
     public void cancel() {
+        cancel(false);
+    }
+
+    public void teardown() {
         cancel(true);
+
+        executor = null;
     }
 }

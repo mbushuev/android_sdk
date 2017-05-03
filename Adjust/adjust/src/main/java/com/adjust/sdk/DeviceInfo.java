@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.util.DisplayMetrics;
 
+import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
 
@@ -49,16 +50,21 @@ class DeviceInfo {
     String displayHeight;
     String hardwareName;
     String abi;
+    String buildName;
+    String vmInstructionSet;
+    String appInstallTime;
+    String appUpdateTime;
     Map<String, String> pluginKeys;
 
     DeviceInfo(Context context, String sdkPrefix) {
         Resources resources = context.getResources();
         DisplayMetrics displayMetrics = resources.getDisplayMetrics();
         Configuration configuration = resources.getConfiguration();
-        Locale locale = configuration.locale;
+        Locale locale = Util.getLocale(configuration);
         int screenLayout = configuration.screenLayout;
         boolean isGooglePlayServicesAvailable = Util.getPlayAdId(context) != null;
         String macAddress = getMacAddress(context, isGooglePlayServicesAvailable);
+        ContentResolver contentResolver = context.getContentResolver();
 
         packageName = getPackageName(context);
         appVersion = getAppVersion(context);
@@ -83,6 +89,10 @@ class DeviceInfo {
         macShortMd5 = getMacShortMd5(macAddress);
         hardwareName = getHardwareName();
         abi = getABI();
+        buildName = getBuildName();
+        vmInstructionSet = getVmInstructionSet();
+        appInstallTime = getAppInstallTime(context);
+        appUpdateTime = getAppUpdateTime(context);
     }
 
     private String getMacAddress(Context context, boolean isGooglePlayServicesAvailable) {
@@ -106,7 +116,7 @@ class DeviceInfo {
             String name = context.getPackageName();
             PackageInfo info = packageManager.getPackageInfo(name, 0);
             return info.versionName;
-        } catch (PackageManager.NameNotFoundException e) {
+        } catch (Exception e) {
             return null;
         }
     }
@@ -154,10 +164,13 @@ class DeviceInfo {
         return locale.getCountry();
     }
 
+    private String getBuildName() {
+        return Build.ID;
+    }
+
     private String getHardwareName() {
         return Build.DISPLAY;
     }
-
     private String getScreenSize(int screenLayout) {
         int screenSize = screenLayout & Configuration.SCREENLAYOUT_SIZE_MASK;
 
@@ -280,5 +293,36 @@ class DeviceInfo {
         }
 
         return SupportedABIS[0];
+    }
+
+    private String getVmInstructionSet() {
+        String instructionSet = Util.getVmInstructionSet();
+        return instructionSet;
+    }
+
+    private String getAppInstallTime(Context context) {
+        try {
+            PackageManager packageManager = context.getPackageManager();
+            PackageInfo packageInfo = packageManager.getPackageInfo(context.getPackageName(), PackageManager.GET_PERMISSIONS);
+
+            String appInstallTime = Util.dateFormatter.format(new Date(packageInfo.firstInstallTime));
+
+            return appInstallTime;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private String getAppUpdateTime(Context context) {
+        try {
+            PackageManager packageManager = context.getPackageManager();
+            PackageInfo packageInfo = packageManager.getPackageInfo(context.getPackageName(), PackageManager.GET_PERMISSIONS);
+
+            String appInstallTime = Util.dateFormatter.format(new Date(packageInfo.lastUpdateTime));
+
+            return appInstallTime;
+        } catch (Exception ex) {
+            return null;
+        }
     }
 }
